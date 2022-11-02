@@ -1,0 +1,25 @@
+#!/bin/sh
+
+set -e
+
+branch=$1
+
+if [ -z "$branch" ]; then
+  echo "Pass branch name as first argument"
+  exit -1
+fi
+
+if [ -z "$(git diff-index --quiet HEAD)" ]; then
+  git fetch origin
+  if ! git rebase origin/$branch --quiet; then
+    conflicted_files=$(git diff --nafe-only --diff-filter=U --relative)
+    if [ $conflicted_files == "db/structure.sql" ] ; then
+      bin/rake db:migrate
+      git add db/structure.sql
+      GIT_EDITOR=true git rebase --continue
+      git push -f
+    fi
+  fi
+else
+  echo "Dirty working directory"
+fi
