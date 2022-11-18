@@ -12,7 +12,7 @@ fi
 if [ -z "$(git diff-index --quiet HEAD)" ]; then
   git fetch origin
   if ! git rebase origin/$branch --quiet; then
-    conflicted_files=$(git diff --nafe-only --diff-filter=U --relative)
+    conflicted_files=$(git diff --name-only --diff-filter=U --relative)
     if [ $conflicted_files == "db/structure.sql" ] ; then
       bin/rake db:migrate
       git add db/structure.sql
