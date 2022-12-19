@@ -4,6 +4,23 @@ set -e
 
 branch=$1
 
+
+resolve_conflicts () {
+  conflicted_files=$(git diff --name-only --diff-filter=U --relative)
+  if [ $conflicted_files == "db/structure.sql" ] ; then
+    echo "conflict in db/structure.sql, re-generating..."
+    bin/rake db:migrate
+    git add db/structure.sql
+    if GIT_EDITOR=true git rebase --continue; then
+      structure_clean=0
+    else
+      structure_clean=1
+    fi
+  else
+    structure_clean=2
+  fi
+}
+
 if [ -z "$branch" ]; then
   echo "Pass branch name as first argument"
   exit -1
@@ -11,15 +28,23 @@ fi
 
 if [ -z "$(git diff-index --quiet HEAD)" ]; then
   git fetch origin
+  structure_clean=0
+
   if ! git rebase origin/$branch --quiet; then
-    conflicted_files=$(git diff --name-only --diff-filter=U --relative)
-    if [ $conflicted_files == "db/structure.sql" ] ; then
-      bin/rake db:migrate
-      git add db/structure.sql
-      GIT_EDITOR=true git rebase --continue
-      git push -f
-    fi
+    structure_clean=1
+    while [ $structure_clean -eq 1 ]; do
+      resolve_conflicts
+    done
   fi
+
+  if [ $structure_clean -eq 0 ]; then
+    git push -f
+  fi
+
+  if [ $structure_clean -eq 2 ]; then
+    echo "Other conflicts detected, fix it manually"
+  fi
+
 else
   echo "Dirty working directory"
 fi
