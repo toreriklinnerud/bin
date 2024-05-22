@@ -1,25 +1,43 @@
-#!/bin/sh
+#!/bin/bash
 
 set -e
 
 branch=$1
 
-
 resolve_conflicts () {
-  conflicted_files=$(git diff --name-only --diff-filter=U --relative)
-  if [ $conflicted_files == "db/structure.sql" ] ; then
-    echo "conflict in db/structure.sql, re-generating..."
-    bin/rake db:migrate
-    git add db/structure.sql
-    if GIT_EDITOR=true git rebase --continue; then
-      structure_clean=0
-    else
-      structure_clean=1
-    fi
+  conflicted_files=($(git diff --name-only --diff-filter=U --relative)) # Store conflicted files in an array
+  echo $conflicted_files
+
+  # Check if all files are SQL files within db/ using grep directly in the if condition
+  if echo "${conflicted_files[@]}" | grep -vq "^db/.*\.sql$"; then
+    structure_clean=2 # If grep finds any file not matching the pattern, set to 2
   else
-    structure_clean=2
+    echo "All conflicts are in db/*.sql, re-generating..."
+
+    for sql_file in "${conflicted_files[@]}"; do
+      # Extract role name from the filename
+      if [[ "$sql_file" == "db/structure.sql" ]]; then
+        db_role="primary"
+      else
+        db_role=$(echo "$sql_file" | sed -n 's/db\/\(.*\)_structure.sql/\1/p')
+      fi
+
+      echo "Dumping and resolving schema for database role: $db_role"
+      bin/rake db:schema:dump:$db_role # Adjust the environment as needed
+      git add "$sql_file" # Add the file immediately after dumping
+
+      if GIT_EDITOR=true git rebase --continue; then
+        echo "Conflict resolved for $sql_file"
+        structure_clean=0 # Conflict resolved successfully for this file
+      else
+        echo "Issue while resolving conflict for $sql_file"
+        structure_clean=1 # An issue occurred while rebasing
+        break # Exit loop if rebase fails
+      fi
+    done
   fi
 }
+
 
 if [ -z "$branch" ]; then
   echo "Pass branch name as first argument"
